@@ -1,0 +1,77 @@
+@import 'tailwindcss';
+
+/*
+ * Penumbra design tokens.
+ *
+ * `@theme static` rather than a plain `@theme`: Tailwind prunes unused tokens from
+ * the production build, but Penumbra's tokens are consumed by canvas drawing code and
+ * inline styles, not only by class names in the DOM. A plain @theme would silently
+ * ship without them. `static` keeps every token.
+ */
+@theme static {
+  --color-void: oklch(0.16 0.012 264);
+  --color-abyss: oklch(0.21 0.016 264);
+  --color-slate: oklch(0.28 0.018 264);
+  --color-mist: oklch(0.62 0.014 264);
+  --color-chalk: oklch(0.93 0.006 264);
+
+  /* Visibility tiers. Each tier has one colour, used at exactly one intensity. */
+  --color-tier0-subconscious: oklch(0.45 0.02 264);
+  --color-tier1-glow: oklch(0.78 0.13 196);
+  --color-tier2a-scaffold: oklch(0.82 0.14 88);
+  --color-tier2b-divergence: oklch(0.74 0.15 32);
+  --color-tier2c-unfolded: oklch(0.86 0.16 152);
+
+  /* Enclave accent — private_draft. Never used outside the enclave boundary. */
+  --color-enclave: oklch(0.55 0.19 302);
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --radius-node: 0.5rem;
+  --ease-ambient: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--color-void);
+  color: var(--color-chalk);
+  font-family: var(--font-sans);
+  /* Ambient by default: nothing should feel like a document that needs scrolling. */
+  overflow: hidden;
+}
+
+/*
+ * Level 1 projection: a 0.5Hz breathing outline.
+ * Only rendered for nodes whose visibility tier is exactly `glow`, and only ever
+ * as a hint — it carries no solution content (CLAUDE.md Section 1).
+ */
+@keyframes penumbra-breathe {
+  0%,
+  100% {
+    opacity: 0.18;
+    filter: blur(6px);
+  }
+  50% {
+    opacity: 0.46;
+    filter: blur(10px);
+  }
+}
+
+.penumbra-glow {
+  animation: penumbra-breathe 2s var(--ease-ambient) infinite;
+  will-change: opacity, filter;
+}
+
+/* Respect the user's motion preference: a glow that never stops pulsing is an
+   attention tax for anyone who asked the OS to reduce motion. */
+@media (prefers-reduced-motion: reduce) {
+  .penumbra-glow {
+    animation: none;
+    opacity: 0.32;
+  }
+}

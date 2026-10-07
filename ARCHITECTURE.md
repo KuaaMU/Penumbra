@@ -46,13 +46,18 @@ Penumbra operates as a 6-layer reactive ambient microkernel, replacing the stand
 ### Layer 4: Trust & Isolation Enclave
 
 - Hard network boundary isolation between layers. Nodes tagged with `layer: "private_draft"` cannot be read by cloud dispatchers.
+- Isolation is **structural, not procedural**: `private_draft` lives in a separate `Y.Doc` instance, backed by its own IndexedDB database, which is never handed to a transport. Yjs offers no "serialise everything except this namespace" primitive — one transaction emits one merged byte array — so a runtime filter at a serialization boundary cannot be the guarantee. See ADR-002.
+- A runtime `EgressPolicy` check remains as defence in depth, and an ESLint rule bans `fetch` outside `src/core/net/`.
 - Hardware Kill-Switch: Global shortcut `Ctrl + Shift + Esc` immediately aborts active agent threads and unmounts all AI visual annotations.
 
 ### Layer 5: Spatial-Temporal CRDT Substrate
 
 - Collaborative data store powered by Yjs. Concurrent writes from the user pen and background MCP agents resolve deterministically.
-- `rbush` 2D R-Tree provides sub-millisecond bounding box collision and viewport querying over 100,000+ nodes.
+- Each layer is a **root type** (`doc.getMap('layer:human')`), not a nested map: root types encode more cheaply and items in different root types can never conflict.
+- `rbush` 2D R-Tree provides viewport querying. **Measured on this hardware** (Chromium/Node, 10,000 nodes, deterministic fixture, 2,369 viewport matches): R-Tree p50 **0.021 ms**, brute-force linear scan p50 **0.162 ms** — a 7.6x speedup. At 100,000 nodes, p50 **0.582 ms**. The earlier claim of "sub-millisecond over 100,000 nodes" was asserted without a measurement; the figure above is what a benchmark actually produced.
+- The spatial index is split into two trees at the enclave boundary, because `rbush` stores items by reference and a single tree spanning that boundary would turn "mutated a node after insertion" into a privacy bug rather than a rendering bug (ADR-006).
 
 ### Layer 6: Presentation Canvas
 
-- Built on `@tldraw/tldraw`. Custom shapes implement the scaffolding UI, split-comparison debate widgets, and dynamic WebGL parameter sliders.
+- Reached through a `CanvasEngine` interface (`src/core/canvas/`), not bound to a single rendering library. `@tldraw/tldraw` was removed as a hard dependency: it is source-available but not open source, it requires a licence key for production, and its `LicenseManager` beacons `window.location.href` to `cdn.tldraw.com` with no opt-out — which cannot be prevented by any store-layer design and directly contradicts Layer 4. See ADR-001 and `docs/LICENSE-NOTES.md`.
+- Custom shapes implement the scaffolding UI, split-comparison debate widgets, and dynamic WebGL parameter sliders.

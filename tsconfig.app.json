@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
+
+    /* Penumbra-specific strictness.
+       noUncheckedIndexedAccess is the highest-value addition over the stock Vite
+       template here: the R-Tree layer indexes packed arrays constantly, and an
+       unchecked index access there silently yields `undefined` geometry. */
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    /* `node` is included because the test suites legitimately use Buffer (byte-level
+       CRDT convergence assertions) and node:perf_hooks (the perf gate). */
+    "types": ["vitest/globals", "node"]
+  },
+  "include": ["src", "tests"]
+}

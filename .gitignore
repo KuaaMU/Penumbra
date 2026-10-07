@@ -43,3 +43,7 @@ yarn-error.log*
 
 # tldraw / tldray license key artifacts (never commit)
 .tldraw-license-key
+
+# Agent & tool scratch
+.claude/
+.scratch-perf/
