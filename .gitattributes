@@ -1,0 +1,16 @@
+# Normalize line endings — keep LF in the repo, let git convert on Windows checkout
+* text=auto eol=lf
+
+# Binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.pdf binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# Lockfile must stay exact — no eol conversion
+pnpm-lock.yaml -text
