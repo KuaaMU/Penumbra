@@ -95,7 +95,14 @@ defect, so it is a rubber stamp that reads as a guarantee.
    using rbush's own inclusive-edge intersection predicate, with a non-vacuity guard. This
    is the assertion with teeth.
 2. **Gated behind `PENUMBRA_PERF=1`** — a p50 budget *plus* a machine-independent **ratio**
-   assertion (`p50 * 5 < bruteForceP50`) that is immune to a slow machine.
+   assertion (`bruteForceP50 / p50 > 2`) that is immune to a slow machine.
+
+   *Corrected 2026-10-08.* This ADR previously read `p50 * 5 < bruteForceP50`. The
+   shipped constant is `REQUIRED_SPEEDUP = 2` in `tests/perf/spatial_index.perf.test.ts`
+   — i.e. `bruteP50 / p50 > 2`, a bound **2.5x looser** than this document claimed. An
+   ADR that describes a stricter threshold than the one that runs is worse than no
+   threshold: a reviewer reading the ADR believes a 5x gate protects the index, and no
+   test would contradict them.
 
 Additionally, a **dense-viewport** case is required: the spec's own setup
 (`[0,0,1920,1080]` over uniform random nodes) hits only ~57 of 10,000 nodes, so the tree

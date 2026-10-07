@@ -6,7 +6,7 @@ Penumbra operates as a 6-layer reactive ambient microkernel, replacing the stand
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 6. Presentation Canvas (tldraw SDK + Custom Shapes + WebGL) │
+│ 6. Presentation Canvas (CanvasEngine adapter + DOM shapes)  │
 ├─────────────────────────────────────────────────────────────┤
 │ 5. Spatial-Temporal Substrate (Yjs CRDT + rbush 2D R-Tree) │
 ├─────────────────────────────────────────────────────────────┤
@@ -54,7 +54,18 @@ Penumbra operates as a 6-layer reactive ambient microkernel, replacing the stand
 
 - Collaborative data store powered by Yjs. Concurrent writes from the user pen and background MCP agents resolve deterministically.
 - Each layer is a **root type** (`doc.getMap('layer:human')`), not a nested map: root types encode more cheaply and items in different root types can never conflict.
-- `rbush` 2D R-Tree provides viewport querying. **Measured on this hardware** (Chromium/Node, 10,000 nodes, deterministic fixture, 2,369 viewport matches): R-Tree p50 **0.021 ms**, brute-force linear scan p50 **0.162 ms** — a 7.6x speedup. At 100,000 nodes, p50 **0.582 ms**. The earlier claim of "sub-millisecond over 100,000 nodes" was asserted without a measurement; the figure above is what a benchmark actually produced.
+- `rbush` 2D R-Tree provides viewport querying. **The published figure is the speedup
+  ratio, not the milliseconds.** Measured at 10,000 nodes over a deterministic fixture
+  (2,369 viewport matches): **6.4x** on the development machine, **3.5x** on a shared
+  CI runner, against a brute-force linear scan measured in the same run. Absolute
+  timings are machine-specific and have already failed to reproduce — the pair
+  originally published here (`0.021 ms` / `0.162 ms`) did not reproduce on the second
+  machine, which measured `0.049 ms` / `0.170 ms`. The gap is the point: a virtualised
+  runner's cache behaviour compresses exactly the ratio a cache-favouring structure
+  exists to exploit, which is why only the ratio is asserted and only the ratio is
+  published. At 100,000 nodes p50 is 0.67 ms on the same machine. The earlier claim of
+  "sub-millisecond over 100,000 nodes" was asserted without a measurement; these figures
+  come from `pnpm test:perf`.
 - The spatial index is split into two trees at the enclave boundary, because `rbush` stores items by reference and a single tree spanning that boundary would turn "mutated a node after insertion" into a privacy bug rather than a rendering bug (ADR-006).
 
 ### Layer 6: Presentation Canvas

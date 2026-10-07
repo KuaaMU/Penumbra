@@ -16,7 +16,7 @@ index are implemented, tested, and documented. There is no canvas rendering yet 
 |---|---|
 | `pnpm typecheck` | clean, TS strict + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` |
 | `pnpm lint` | clean at `--max-warnings 0` |
-| `pnpm test:unit` | 48 passing |
+| `pnpm test:unit` | 99 passing (2 perf skipped) |
 | `pnpm test:e2e` | 2 passing (headless Chromium) |
 | `pnpm test:perf` | 2 passing (gated behind `PENUMBRA_PERF=1`) |
 | `pnpm build` | clean |
@@ -57,8 +57,9 @@ with the finding that forced it. The two that most affect what you read here:
   [`docs/LICENSE-NOTES.md`](docs/LICENSE-NOTES.md).
 
 - **ADR-003 — the R-Tree gate measures correctness, not latency.** The original spec
-  asked for a query under 3 ms. Measured: R-Tree p50 **0.021 ms**, brute-force linear
-  scan p50 **0.162 ms**. A 3 ms budget therefore passes a completely broken index and
+  asked for a query under 3 ms. Measured: R-Tree p50 **0.025 ms**, brute-force linear
+  scan p50 **0.161 ms** — 6.4x on this machine, 3.5x on a shared CI runner. A 3 ms
+  budget therefore passes a completely broken index and
   a no-index scan alike, and tolerates a ~300x regression — it cannot fail for any
   realistic defect. The mandatory gate is now set-equality against a brute-force
   reference; the timing assertion moved behind `PENUMBRA_PERF=1` and carries a

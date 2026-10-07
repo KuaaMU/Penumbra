@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { CanvasStore, type NewNodeInput } from '../../src/core/store/canvas-store.ts'
-import { SpatialIndex, indexFromNodes } from '../../src/core/spatial/spatial-index.ts'
+import { SpatialIndex, rebuildIndexFromNodes } from '../../src/core/spatial/spatial-index.ts'
 import type { SpatialNode } from '../../src/core/model/nodes.ts'
 
 const VIEWPORT_ALL = { minX: -1e6, minY: -1e6, maxX: 1e6, maxY: 1e6 }
@@ -40,7 +40,7 @@ describe('CRDT to R-Tree pipeline', () => {
       store.insert(stroke({ bounds: { minX: i * 10, minY: 0, maxX: i * 10 + 50, maxY: 50 } }))
     }
 
-    const index = indexFromNodes(store.getNodes())
+    const index = rebuildIndexFromNodes(store.getNodes())
     expect(index.size).toBe(50)
     expect(index.search({ minX: 0, minY: 0, maxX: 100, maxY: 100 }).length).toBeGreaterThan(0)
   })
@@ -72,7 +72,7 @@ describe('CRDT to R-Tree pipeline', () => {
     store.insert(stroke({ layer: 'agent_annotation' }))
 
     const nodes: SpatialNode[] = store.getNodes()
-    const index = indexFromNodes(nodes)
+    const index = rebuildIndexFromNodes(nodes)
 
     expect(index.size).toBe(3)
     expect(index.shareableSize).toBe(2)
@@ -92,8 +92,8 @@ describe('CRDT to R-Tree pipeline', () => {
     const b = peer.insert(stroke({ bounds: { minX: 900, minY: 900, maxX: 950, maxY: 950 } }))
 
     // Each index alone knows one node — that is the divergence.
-    const indexA = indexFromNodes(store.getNodes())
-    const indexPeer = indexFromNodes(peer.getNodes())
+    const indexA = rebuildIndexFromNodes(store.getNodes())
+    const indexPeer = rebuildIndexFromNodes(peer.getNodes())
     expect(indexA.size).toBe(1)
     expect(indexPeer.size).toBe(1)
 
@@ -103,14 +103,14 @@ describe('CRDT to R-Tree pipeline', () => {
     Y.applyUpdate(peer.doc, Y.encodeStateAsUpdate(store.doc))
 
     // After the merge both peers describe the same spatial world.
-    const indexMerged = indexFromNodes(store.getNodes())
+    const indexMerged = rebuildIndexFromNodes(store.getNodes())
     expect(indexMerged.size).toBe(2)
     expect(indexMerged.search({ minX: 0, minY: 0, maxX: 100, maxY: 100 }).map((f) => f.id)).toContain(a.id)
     expect(indexMerged.search({ minX: 800, minY: 800, maxX: 1_000, maxY: 1_000 }).map((f) => f.id)).toContain(b.id)
 
     // And rebuilding from either peer yields an identical index — the property that
     // actually matters for a CRDT-backed spatial index.
-    const fromPeer = indexFromNodes(peer.getNodes())
+    const fromPeer = rebuildIndexFromNodes(peer.getNodes())
     expect(new Set(fromPeer.search(VIEWPORT_ALL).map((f) => f.id))).toEqual(
       new Set(indexMerged.search(VIEWPORT_ALL).map((f) => f.id)),
     )

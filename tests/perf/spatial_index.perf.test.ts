@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { performance } from 'node:perf_hooks'
-import { indexFromNodes, type SpatialIndex } from '../../src/core/spatial/spatial-index.ts'
+import { rebuildIndexFromNodes, type SpatialIndex } from '../../src/core/spatial/spatial-index.ts'
 import { VIEWPORT, makeFixture, bruteForceSearch, type FixtureNode } from '../fixtures/spatial-fixture.ts'
 
 /**
@@ -59,7 +59,7 @@ describe.skipIf(!enabled)('SpatialIndex performance at 10,000 nodes', () => {
 
   beforeAll(() => {
     nodes = makeFixture({ count: NODE_COUNT, seed: 0xc0ffee })
-    index = indexFromNodes(nodes)
+    index = rebuildIndexFromNodes(nodes)
     expected = bruteForceSearch(nodes, VIEWPORT)
     expect(expected.length).toBeGreaterThan(0)
 
@@ -122,7 +122,7 @@ describe.skipIf(!enabled)('SpatialIndex performance at 10,000 nodes', () => {
 
   it('holds up at 100,000 nodes, which ARCHITECTURE.md claims but nothing measured', () => {
     const big = makeFixture({ count: 100_000, seed: 0xbeef })
-    const bigIndex = indexFromNodes(big)
+    const bigIndex = rebuildIndexFromNodes(big)
     const matches = bruteForceSearch(big, VIEWPORT)
     expect(matches.length).toBeGreaterThan(0)
 

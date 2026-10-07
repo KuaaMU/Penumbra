@@ -42,6 +42,8 @@ export function boxesIntersect(a: BoundingBox2D, b: BoundingBox2D): boolean {
 export class SpatialIndex {
   #world: RBush<SpatialItem>
   #private: RBush<SpatialItem>
+  /** Retained so compact() rebuilds at the same fanout the constructor asked for. */
+  readonly #maxEntries: number
   /** The exact object handed to rbush, so removal can match on identity-derived id. */
   readonly #byId = new Map<string, SpatialItem>()
 
@@ -49,6 +51,7 @@ export class SpatialIndex {
     // 16 is the README's own bulk-load recommendation; rbush silently clamps the
     // minimum to 4, so a smaller request would silently get the worst case for
     // empty-node accumulation.
+    this.#maxEntries = maxEntries
     this.#world = new RBush<SpatialItem>(maxEntries)
     this.#private = new RBush<SpatialItem>(maxEntries)
   }
@@ -159,19 +162,24 @@ export class SpatialIndex {
    * correct. An ambient always-on canvas needs this more than a short-lived script.
    */
   compact(): void {
-    this.#world = new RBush<SpatialItem>(16).load(this.#world.all())
-    this.#private = new RBush<SpatialItem>(16).load(this.#private.all())
+    this.#world = new RBush<SpatialItem>(this.#maxEntries).load(this.#world.all())
+    this.#private = new RBush<SpatialItem>(this.#maxEntries).load(this.#private.all())
   }
 }
 
 /**
- * Keep a SpatialIndex in step with a CanvasStore.
+ * Rebuild an index from a COMPLETE node list. Not an incremental sync.
  *
- * Batch every write from one observer pass into a single load()/remove() round: one
- * CRDT merge can produce dozens of events, and a per-event insert() is both slower
- * and a worse fit for the tree than a bulk build.
+ * `RBush.load()` appends, so calling this twice with overlapping input leaves two
+ * entries for one id, both of which answer queries — and `size` reads `#byId.size`,
+ * which dedupes, so the duplication is invisible to every count and only shows up as a
+ * wrong answer. Phase 1 therefore keeps an index current with `upsert()` per changed
+ * node (see store/index-sync.ts) and uses this only for a full rehydrate.
+ *
+ * The name says "from", not "sync", on purpose. It was previously `indexFromNodes`,
+ * which reads as incremental and is not.
  */
-export function indexFromNodes(
+export function rebuildIndexFromNodes(
   nodes: readonly {
     id: string
     bounds: BoundingBox2D

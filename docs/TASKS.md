@@ -7,8 +7,8 @@ This document defines the strict, sequential test-driven work packages for Claud
 ## Phase 0: Workspace Scaffold, CRDT Store & Spatial Engine
 
 > **Status: COMPLETE** — see `docs/ADR/ADR-001-through-006.md`. Gates green:
-> `pnpm build`, `pnpm typecheck`, `pnpm lint` (0 warnings), `pnpm test:unit` (42 passing),
-> `pnpm test:e2e` (2 passing), `pnpm test:perf` (2 passing, measured).
+> `pnpm build`, `pnpm typecheck`, `pnpm lint` (0 warnings), `pnpm test:unit` (99 passing,
+> 2 perf skipped), `pnpm test:e2e` (2 passing), `pnpm test:perf` (2 passing, measured).
 
 ### Task 0.1: Project Setup & Quality Tooling
 
@@ -31,17 +31,51 @@ This document defines the strict, sequential test-driven work packages for Claud
 
 - **Action**: `SpatialIndex` over `rbush`, split into `worldTree` / `privateTree` at the enclave boundary, synced from `CanvasStore`.
 - **Tests (Vitest)**: `tests/unit/spatial_index.test.ts` — exact set-equality against a brute-force reference over 10,000 nodes and 30 query boxes, using rbush's own **inclusive-edge** intersection predicate.
-- **Deviation from the original gate**: the spec asked for "under 3ms". Measured: R-Tree p50 **0.021 ms**, brute force p50 **0.162 ms** — a 3 ms budget passes a completely broken index and a no-index scan alike, so it cannot fail for any realistic defect. The mandatory gate in `test:unit` is therefore *correctness*; the timing assertion moved to `pnpm test:perf` behind `PENUMBRA_PERF=1` and carries a machine-independent ratio assertion (`p50 * 5 < bruteP50`). See ADR-003.
+- **Deviation from the original gate**: the spec asked for "under 3ms". Measured on this machine: R-Tree p50 **0.025 ms**, brute force p50 **0.161 ms** (**6.4x**; 3.5x on a shared CI runner) — a 3 ms budget passes a completely broken index and a no-index scan alike, so it cannot fail for any realistic defect. The mandatory gate in `test:unit` is therefore *correctness*; the timing assertion moved to `pnpm test:perf` behind `PENUMBRA_PERF=1` and carries a machine-independent ratio assertion, `bruteP50 / p50 > 2` (`REQUIRED_SPEEDUP` in
+`tests/perf/spatial_index.perf.test.ts`). See ADR-003.
+
+**Published figures are a ratio, not a pair of milliseconds.** Absolute timings are
+machine-specific and have already failed to reproduce: the numbers first published here
+(`0.021 ms` / `0.162 ms` / `7.6x`) did not reproduce on a second machine, which measured
+`0.049 ms` / `0.170 ms` / `3.5x`. Only the ratio survives a hardware change, so only the
+ratio is asserted and only the ratio is published.
 
 ---
 
 ## Phase 1: Canvas Integration & 3-Tier Scaffolding Node
 
-### Task 1.1: Custom Shape Registration in tldraw
+> **Re-cut 2026-10-08.** The tasks below were written when `@tldraw/tldraw` was the
+> mandated canvas. ADR-001 removed it, so the original gates were unmeetable rather than
+> merely unmet — they instructed an implementer to register a shape in a library the
+> constitution forbids. Task 1.1 is re-cut against the `CanvasEngine` seam in Phase 1.1a
+> of the Phase 1 plan (ADR-007).
 
-- **Action**: Register `ScaffoldingShape` in `@tldraw/tldraw`.
+### Task 1.0: Harden the mutation seam — COMPLETE
+
+`CanvasStore.update()` enforced none of the invariants `setVisibility` enforced. Across the
+entire Phase 0 suite there was exactly ONE `update()` call, patching `{bounds}` — which is
+why four bypasses shipped green. Measured reproductions, all against unmodified Phase 0:
+
+| defect | effect |
+|---|---|
+| `layer` is writable through a patch | a `private_draft` patched to `layer:'human'` lands in `Y.encodeStateAsUpdate(doc)`; `exportable()` returns it; the enclave boundary holds in letter and fails in purpose |
+| `visibility` is writable through a patch | `update(id, {visibility:'unfolded'}, 'agent')` succeeds where `setVisibility` throws — the ZERO ATTENTION TAX invariant, bypassable from the public API |
+| `insert()` never consults the transition table | an agent authors a node born at `unfolded`, carrying the finished solution, without ever passing the table |
+| `#emit` routes removals through `getNodeById` | `remove()` emits `{nodes: []}`; a consumer rebuilding from events cannot tell a deletion from an empty layer |
+
+Fixed in `tests/unit/store_invariants.test.ts` (36 tests, all four defects reproduced and
+refused) and `tests/unit/index_sync.test.ts`. Also closed: `remove()`/`update()` on a
+tombstoned record, writes after `destroy()`, and the fact that `getNode()` handed out the
+stored object by reference — which let any caller rewrite the document through a node it
+merely read, with no transaction and therefore none of `update()`'s checks.
+
+### Task 1.1: The renderer
+
+- **Action**: implement `CanvasEngine` (`src/core/canvas/engine.ts`) over positioned DOM
+  elements and one transformed world container. No canvas, no WebGL, no third-party
+  renderer dependency in Phase 1. Rationale and the measured licence/status evidence for
+  the rejected options are in ADR-007.
 - **Tests (Playwright E2E)**:
-  - `tests/e2e/scaffolding_shape.test.ts`: Render canvas headless. Mount a `ScaffoldingShape`. Validate DOM presence.
 
 ### Task 1.2: Three-Tier State Machine & Glow Rendering
 
@@ -52,6 +86,31 @@ This document defines the strict, sequential test-driven work packages for Claud
     2. Click once: assert `socraticHint` is visible in DOM.
     3. Click detail toggle: assert `divergenceMatrix` is visible.
     4. Assert `unfoldedSolution` is only unmasked after third explicit click.
+
+  **Correction, added after the four assertions above were written.** Those four are
+  satisfiable by a renderer that does nothing: assertion 1 passes when no node is
+  mounted at all, and assertions 2-4 pass only if a node *is* mounted — so the suite
+  measures the renderer twice and catches neither failure mode cleanly. Measured in a
+  headless browser: `expect(locator).toHaveCount(0)` resolves in **7 ms** against an
+  element that appears at 800 ms, so a "nothing is rendered" assertion is vacuous by
+  default; `toBeHidden()` passes on a `display:none` node; and a viewport-scoped
+  `not.toContainText` cannot fail at all — it passes against a dead renderer, against
+  an `aria-label` leak, and against a `data-*` leak.
+
+  So each negative assertion is written to be un-passable without a live node:
+
+  - a `data-testid="scene-ready"` anchor emitted on the engine's first commit, and every
+    negative assertion waits for it first;
+  - `toHaveCount(0)` only, never `toBeHidden()`;
+  - four independent leak detectors for "a `glow` node carries no solution text", each
+    with its own positive control (inject the sentinel, prove that detector finds it,
+    remove it) — node-scoped text, `document.body.textContent`, an attribute sweep, and
+    a comment-node `createTreeWalker`;
+  - a `MutationObserver` recording the `data-visibility` sequence, so a renderer that
+    jumps `glow -> unfolded` in one click fails even though it satisfies all four
+    literal assertions above;
+  - the "absent before the third click" half is always paired with "present after it",
+    because absence alone is what a permanently-hidden renderer produces.
 
 ---
 

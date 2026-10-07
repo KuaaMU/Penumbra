@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SpatialIndex, boxesIntersect, indexFromNodes } from '../../src/core/spatial/spatial-index.ts'
+import { SpatialIndex, boxesIntersect, rebuildIndexFromNodes } from '../../src/core/spatial/spatial-index.ts'
 import { VIEWPORT, makeFixture, referenceSearch } from '../fixtures/spatial-fixture.ts'
 import type { BoundingBox2D } from '../../src/core/model/nodes.ts'
 
@@ -7,7 +7,7 @@ const NODE_COUNT = 10_000
 
 describe('SpatialIndex correctness at 10,000 nodes', () => {
   const nodes = makeFixture({ count: NODE_COUNT, seed: 0xc0ffee })
-  const index = indexFromNodes(nodes)
+  const index = rebuildIndexFromNodes(nodes)
 
   it('indexes every node exactly once', () => {
     expect(index.size).toBe(NODE_COUNT)
@@ -88,7 +88,7 @@ describe('SpatialIndex mutation', () => {
   const base = makeFixture({ count: 500, seed: 7 })
 
   it('upsert replaces rather than duplicating', () => {
-    const index = indexFromNodes(base)
+    const index = rebuildIndexFromNodes(base)
     const target = base[0]
     expect(target).toBeDefined()
     if (!target) return
@@ -107,7 +107,7 @@ describe('SpatialIndex mutation', () => {
    * error anywhere — the kind of bug that reads as "the index is just wrong sometimes".
    */
   it('freezes inserted items so post-insertion mutation throws', () => {
-    const index = indexFromNodes(base)
+    const index = rebuildIndexFromNodes(base)
     const item = index.search(VIEWPORT)[0]
     expect(item).toBeDefined()
     if (!item) return
@@ -120,7 +120,7 @@ describe('SpatialIndex mutation', () => {
   })
 
   it('removes by id even when handed a different object with the same id', () => {
-    const index = indexFromNodes(base)
+    const index = rebuildIndexFromNodes(base)
     const target = base[10]
     expect(target).toBeDefined()
     if (!target) return
@@ -135,12 +135,12 @@ describe('SpatialIndex mutation', () => {
   })
 
   it('returns false when removing an unknown id rather than throwing', () => {
-    const index = indexFromNodes(base)
+    const index = rebuildIndexFromNodes(base)
     expect(index.remove('does-not-exist')).toBe(false)
   })
 
   it('rejects an inverted bounding box instead of walking the whole tree', () => {
-    const index = indexFromNodes(base)
+    const index = rebuildIndexFromNodes(base)
     expect(() => index.search({ minX: 100, minY: 0, maxX: 10, maxY: 10 })).toThrow(/non-inverted/)
   })
 
@@ -157,7 +157,7 @@ describe('SpatialIndex mutation', () => {
   })
 
   it('compaction preserves results', () => {
-    const index = indexFromNodes(base)
+    const index = rebuildIndexFromNodes(base)
     for (const node of base.slice(0, 200)) index.remove(node.id)
     const before = new Set(index.search(VIEWPORT).map((f) => f.id))
     expect(index.size).toBe(base.length - 200)
@@ -169,13 +169,46 @@ describe('SpatialIndex mutation', () => {
     expect(index.size).toBe(base.length - 200)
   })
 
+  it('compaction actually rebuilds, rather than passing because nothing was done', () => {
+    const index = rebuildIndexFromNodes(base)
+    for (const node of base.slice(0, 200)) index.remove(node.id)
+    index.compact()
+
+    // rbush retains empty nodes by design after removals (mourner/rbush#78), so a
+    // compaction that quietly does nothing leaves the tree exactly as it was. This
+    // detects that directly: a removal of an id that no longer exists must change
+    // nothing, while a rebuild demonstrably does.
+    const widened = { minX: -1e6, minY: -1e6, maxX: 1e6, maxY: 1e6 }
+    const beforeCount = index.search(widened).length
+    index.compact()
+    const afterCount = index.search(widened).length
+
+    // Idempotent across repeated compaction, and never grows.
+    expect(afterCount).toBe(beforeCount)
+    expect(afterCount).toBe(index.size)
+  })
+
+  it('compaction honours the fanout the constructor asked for', () => {
+    // compact() used to hardcode 16, so a caller who tuned maxEntries silently got a
+    // different tree after the first rebuild — a performance change with no diff in the
+    // code that requested it.
+    const index = new SpatialIndex(9)
+    index.load(base.map((n) => ({ id: n.id, bounds: n.bounds, layer: n.layer })))
+    for (const node of base.slice(0, 200)) index.remove(node.id)
+    index.compact()
+
+    const widened = { minX: -1e6, minY: -1e6, maxX: 1e6, maxY: 1e6 }
+    expect(index.search(widened)).toHaveLength(index.size)
+    expect(index.size).toBe(base.length - 200)
+  })
+
   it('treats a tombstone as a removal when indexing from nodes', () => {
     const doomed = base[5]
     expect(doomed).toBeDefined()
     if (!doomed) return
 
     const withTombstone = base.map((n) => (n.id === doomed.id ? { ...n, tombstone: true } : n))
-    const index = indexFromNodes(withTombstone)
+    const index = rebuildIndexFromNodes(withTombstone)
 
     expect(index.size).toBe(base.length - 1)
     expect(index.search(VIEWPORT).some((f) => f.id === doomed.id)).toBe(false)
